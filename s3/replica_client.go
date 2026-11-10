@@ -108,6 +108,11 @@ type ReplicaClient struct {
 	PutObjectContentMD5 bool
 	StorageClass        string
 
+	// TLSConfig, when set, is the TLS configuration of the client's HTTP
+	// transport, such as RootCAs holding a private CA for this endpoint
+	// only. It is cloned at Init. SkipVerify still applies on top of it.
+	TLSConfig *tls.Config
+
 	// Upload configuration
 	PartSize    int64 // Part size for multipart uploads (default: 5MB)
 	Concurrency int   // Number of concurrent parts to upload (default: 5)
@@ -414,11 +419,17 @@ func (c *ReplicaClient) Init(ctx context.Context) (err error) {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
-	// Configure TLS to skip verification if requested
+	// Configure TLS: the caller's configuration, then skip verification if
+	// requested.
+	if c.TLSConfig != nil {
+		httpClient.Transport.(*http.Transport).TLSClientConfig = c.TLSConfig.Clone()
+	}
 	if c.SkipVerify {
-		httpClient.Transport.(*http.Transport).TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
+		tr := httpClient.Transport.(*http.Transport)
+		if tr.TLSClientConfig == nil {
+			tr.TLSClientConfig = &tls.Config{}
 		}
+		tr.TLSClientConfig.InsecureSkipVerify = true
 	}
 
 	// Build configuration options
